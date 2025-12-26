@@ -334,67 +334,177 @@ function updateRecommendations(){
 loadFavorites()
 updateRecommendations()
 
-// Block redirect attempts and pop-ups
+// Enhanced redirect and ad blocker
 (function() {
-  // Prevent window.open pop-ups
-  const originalOpen = window.open;
+  // Block all window.open attempts
   window.open = function() {
-    console.log("Blocked pop-up attempt");
+    console.log("🚫 Blocked pop-up attempt");
     return null;
   };
 
-  // Block redirects via window.location
-  let allowNavigation = true;
-  const originalLocationSetter = Object.getOwnPropertyDescriptor(window, 'location').set;
-  
-  Object.defineProperty(window, 'location', {
-    set: function(value) {
-      if (allowNavigation) {
-        originalLocationSetter.call(window, value);
-      } else {
-        console.log("Blocked redirect attempt to:", value);
-      }
+  // Override window.open for iframes too
+  Object.defineProperty(window, 'open', {
+    value: function() {
+      console.log("🚫 Blocked pop-up via property");
+      return null;
     },
-    get: function() {
-      return window.location;
-    }
+    writable: false,
+    configurable: false
   });
 
-  // Block beforeunload redirects
+  // Block location changes
+  let isUserAction = false;
+  const originalReplace = window.location.replace;
+  const originalAssign = window.location.assign;
+  
+  window.location.replace = function(url) {
+    if (!isUserAction) {
+      console.log("🚫 Blocked location.replace to:", url);
+      return;
+    }
+    originalReplace.call(window.location, url);
+  };
+  
+  window.location.assign = function(url) {
+    if (!isUserAction) {
+      console.log("🚫 Blocked location.assign to:", url);
+      return;
+    }
+    originalAssign.call(window.location, url);
+  };
+
+  // Block meta refresh
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach((node) => {
+          if (node.tagName === 'META' && node.httpEquiv === 'refresh') {
+            node.remove();
+            console.log("🚫 Blocked meta refresh");
+          }
+        });
+      }
+    });
+  });
+  observer.observe(document.head, { childList: true, subtree: true });
+
+  // Block beforeunload/unload redirects
   window.addEventListener('beforeunload', function(e) {
-    if (!allowNavigation) {
+    if (!isUserAction) {
       e.preventDefault();
-      e.returnValue = '';
-      return '';
+      e.stopImmediatePropagation();
+      return undefined;
     }
   }, true);
 
-  // Detect and block suspicious clicks that might trigger redirects
+  window.addEventListener('unload', function(e) {
+    if (!isUserAction) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
+
+  // Intercept all click events
   document.addEventListener('click', function(e) {
     const target = e.target;
+    const link = target.closest('a');
     
-    // Allow navigation for legitimate internal links
-    if (target.tagName === 'A' && target.href && target.href.startsWith(window.location.origin)) {
-      allowNavigation = true;
+    // Allow clicks on our own content
+    if (link && link.href && link.href.startsWith(window.location.origin)) {
+      isUserAction = true;
+      setTimeout(() => { isUserAction = false; }, 1000);
       return;
     }
     
-    // Block external navigation attempts
-    allowNavigation = false;
-    setTimeout(() => { allowNavigation = true; }, 100);
+    // Allow clicks on our buttons/elements
+    if (target.closest('.close-btn, .load-more, .slider-btn, .movie, #search')) {
+      isUserAction = true;
+      setTimeout(() => { isUserAction = false; }, 100);
+      return;
+    }
+    
+    // Block everything else
+    isUserAction = false;
   }, true);
 
-  // Block new window/tab attempts
-  window.addEventListener('auxclick', function(e) {
-    if (e.button === 1) { // Middle mouse button
+  // Block middle mouse button clicks
+  document.addEventListener('auxclick', function(e) {
+    if (e.button === 1) {
       const target = e.target.closest('a');
       if (!target || !target.href || !target.href.startsWith(window.location.origin)) {
         e.preventDefault();
         e.stopPropagation();
-        console.log("Blocked middle-click redirect");
+        e.stopImmediatePropagation();
+        console.log("🚫 Blocked middle-click");
+        return false;
       }
     }
   }, true);
+
+  // Block context menu on iframe to prevent "open in new tab"
+  document.addEventListener('contextmenu', function(e) {
+    if (e.target.tagName === 'IFRAME') {
+      e.preventDefault();
+      console.log("🚫 Blocked context menu on iframe");
+      return false;
+    }
+  }, true);
+
+  // Intercept fetch/xhr requests (advanced blocking)
+  const originalFetch = window.fetch;
+  window.fetch = function(...args) {
+    const url = args[0];
+    // Allow TMDB API calls
+    if (typeof url === 'string' && (url.includes('themoviedb.org') || url.includes('image.tmdb.org'))) {
+      return originalFetch.apply(this, args);
+    }
+    // Block suspicious external requests
+    if (typeof url === 'string' && (url.includes('redirect') || url.includes('ad') || url.includes('popup'))) {
+      console.log("🚫 Blocked suspicious fetch:", url);
+      return Promise.reject(new Error('Blocked by ad blocker'));
+    }
+    return originalFetch.apply(this, args);
+  };
+
+  // Block timer-based redirects
+  const originalSetTimeout = window.setTimeout;
+  const originalSetInterval = window.setInterval;
+  
+  window.setTimeout = function(callback, delay, ...args) {
+    if (typeof callback === 'string' && (callback.includes('location') || callback.includes('window.open'))) {
+      console.log("🚫 Blocked setTimeout redirect");
+      return 0;
+    }
+    return originalSetTimeout.call(window, callback, delay, ...args);
+  };
+  
+  window.setInterval = function(callback, delay, ...args) {
+    if (typeof callback === 'string' && (callback.includes('location') || callback.includes('window.open'))) {
+      console.log("🚫 Blocked setInterval redirect");
+      return 0;
+    }
+    return originalSetInterval.call(window, callback, delay, ...args);
+  };
+
+  // Block focus stealing
+  let lastFocusTime = Date.now();
+  window.addEventListener('focus', function(e) {
+    const timeSinceLast = Date.now() - lastFocusTime;
+    if (timeSinceLast < 100 && e.target !== window) {
+      e.stopImmediatePropagation();
+      console.log("🚫 Blocked focus stealing");
+    }
+    lastFocusTime = Date.now();
+  }, true);
+
+  // Block visibility change tricks
+  document.addEventListener('visibilitychange', function(e) {
+    if (!isUserAction && document.hidden) {
+      e.stopImmediatePropagation();
+    }
+  }, true);
+
+  console.log("✅ Enhanced ad blocker activated");
 })();
 
 const initSliders=()=>{
