@@ -110,6 +110,7 @@ function updateSearchInfo(displayedCount,totalCount){
 function show(title, overview, movieId) {
   overlay.classList.add("show");
   document.getElementById("movie-title").textContent = title;
+  
   const container = document.createElement("span");
   const truncated = overview.substring(0, 150) + "... ";
   const textWrapper = document.createElement("span");
@@ -147,19 +148,70 @@ function show(title, overview, movieId) {
 
   document.getElementById("player").src = `https://player.videasy.net/movie/${movieId}?color=8B5CF6`;
   updateRecentlyWatched(movieId);
+
+  // Auto-enter fullscreen after a short delay to let the overlay appear
+  setTimeout(() => {
+    const videoContainer = document.querySelector(".video-container");
+    if (videoContainer) {
+      if (videoContainer.requestFullscreen) {
+        videoContainer.requestFullscreen().catch(err => {
+          console.log("Fullscreen request failed:", err);
+        });
+      } else if (videoContainer.webkitRequestFullscreen) {
+        videoContainer.webkitRequestFullscreen();
+      } else if (videoContainer.msRequestFullscreen) {
+        videoContainer.msRequestFullscreen();
+      }
+    }
+  }, 500);
 }
 
 overlay.addEventListener("click", e => {
   if (e.target === overlay) {
+    // Exit fullscreen if active
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+      }
+    }
     overlay.classList.remove("show");
     document.getElementById("player").src = "";
   }
 });
 
 closeBtn.addEventListener("click",()=>{
+  // Exit fullscreen if active
+  if (document.fullscreenElement) {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+  }
   overlay.classList.remove("show")
   document.getElementById("player").src=""
 })
+
+// Listen for fullscreen exit (ESC key) and close overlay
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && overlay.classList.contains("show")) {
+    overlay.classList.remove("show");
+    document.getElementById("player").src = "";
+  }
+});
+
+document.addEventListener("webkitfullscreenchange", () => {
+  if (!document.webkitFullscreenElement && overlay.classList.contains("show")) {
+    overlay.classList.remove("show");
+    document.getElementById("player").src = "";
+  }
+});
 
 function performSearch(resetPage=true){
   const query=searchInput.value.trim()
