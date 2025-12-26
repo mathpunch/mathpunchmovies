@@ -180,6 +180,7 @@ overlay.addEventListener("click", e => {
     }
     overlay.classList.remove("show");
     document.getElementById("player").src = "";
+    sessionStorage.removeItem('currentMovie');
   }
 });
 
@@ -196,6 +197,7 @@ closeBtn.addEventListener("click",()=>{
   }
   overlay.classList.remove("show")
   document.getElementById("player").src=""
+  sessionStorage.removeItem('currentMovie');
 })
 
 // Listen for fullscreen exit (ESC key) and close overlay
@@ -203,6 +205,7 @@ document.addEventListener("fullscreenchange", () => {
   if (!document.fullscreenElement && overlay.classList.contains("show")) {
     overlay.classList.remove("show");
     document.getElementById("player").src = "";
+    sessionStorage.removeItem('currentMovie');
   }
 });
 
@@ -210,6 +213,41 @@ document.addEventListener("webkitfullscreenchange", () => {
   if (!document.webkitFullscreenElement && overlay.classList.contains("show")) {
     overlay.classList.remove("show");
     document.getElementById("player").src = "";
+    sessionStorage.removeItem('currentMovie');
+  }
+});
+
+// Restore movie when returning to tab
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden) {
+    const savedMovie = sessionStorage.getItem('currentMovie');
+    if (savedMovie) {
+      try {
+        const movieData = JSON.parse(savedMovie);
+        const timeSinceSaved = Date.now() - movieData.timestamp;
+        
+        // Only restore if less than 5 minutes have passed
+        if (timeSinceSaved < 300000 && !overlay.classList.contains("show")) {
+          show(movieData.title, movieData.overview, movieData.movieId);
+        }
+      } catch(e) {}
+    }
+  }
+});
+
+// Also check on page focus
+window.addEventListener('focus', function() {
+  const savedMovie = sessionStorage.getItem('currentMovie');
+  if (savedMovie) {
+    try {
+      const movieData = JSON.parse(savedMovie);
+      const timeSinceSaved = Date.now() - movieData.timestamp;
+      
+      // Only restore if less than 5 minutes have passed
+      if (timeSinceSaved < 300000 && !overlay.classList.contains("show")) {
+        show(movieData.title, movieData.overview, movieData.movieId);
+      }
+    } catch(e) {}
   }
 });
 
