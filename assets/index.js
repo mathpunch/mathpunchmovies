@@ -338,14 +338,12 @@ updateRecommendations()
 (function() {
   // Block all window.open attempts
   window.open = function() {
-    console.log("🚫 Blocked pop-up attempt");
     return null;
   };
 
   // Override window.open for iframes too
   Object.defineProperty(window, 'open', {
     value: function() {
-      console.log("🚫 Blocked pop-up via property");
       return null;
     },
     writable: false,
@@ -359,7 +357,6 @@ updateRecommendations()
   
   window.location.replace = function(url) {
     if (!isUserAction) {
-      console.log("🚫 Blocked location.replace to:", url);
       return;
     }
     originalReplace.call(window.location, url);
@@ -367,7 +364,6 @@ updateRecommendations()
   
   window.location.assign = function(url) {
     if (!isUserAction) {
-      console.log("🚫 Blocked location.assign to:", url);
       return;
     }
     originalAssign.call(window.location, url);
@@ -380,7 +376,6 @@ updateRecommendations()
         mutation.addedNodes.forEach((node) => {
           if (node.tagName === 'META' && node.httpEquiv === 'refresh') {
             node.remove();
-            console.log("🚫 Blocked meta refresh");
           }
         });
       }
@@ -435,7 +430,6 @@ updateRecommendations()
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        console.log("🚫 Blocked middle-click");
         return false;
       }
     }
@@ -445,7 +439,6 @@ updateRecommendations()
   document.addEventListener('contextmenu', function(e) {
     if (e.target.tagName === 'IFRAME') {
       e.preventDefault();
-      console.log("🚫 Blocked context menu on iframe");
       return false;
     }
   }, true);
@@ -460,7 +453,6 @@ updateRecommendations()
     }
     // Block suspicious external requests
     if (typeof url === 'string' && (url.includes('redirect') || url.includes('ad') || url.includes('popup'))) {
-      console.log("🚫 Blocked suspicious fetch:", url);
       return Promise.reject(new Error('Blocked by ad blocker'));
     }
     return originalFetch.apply(this, args);
@@ -472,7 +464,6 @@ updateRecommendations()
   
   window.setTimeout = function(callback, delay, ...args) {
     if (typeof callback === 'string' && (callback.includes('location') || callback.includes('window.open'))) {
-      console.log("🚫 Blocked setTimeout redirect");
       return 0;
     }
     return originalSetTimeout.call(window, callback, delay, ...args);
@@ -480,7 +471,6 @@ updateRecommendations()
   
   window.setInterval = function(callback, delay, ...args) {
     if (typeof callback === 'string' && (callback.includes('location') || callback.includes('window.open'))) {
-      console.log("🚫 Blocked setInterval redirect");
       return 0;
     }
     return originalSetInterval.call(window, callback, delay, ...args);
@@ -492,7 +482,6 @@ updateRecommendations()
     const timeSinceLast = Date.now() - lastFocusTime;
     if (timeSinceLast < 100 && e.target !== window) {
       e.stopImmediatePropagation();
-      console.log("🚫 Blocked focus stealing");
     }
     lastFocusTime = Date.now();
   }, true);
@@ -504,7 +493,56 @@ updateRecommendations()
     }
   }, true);
 
-  console.log("✅ Enhanced ad blocker activated");
+  // Monitor and maintain fullscreen state
+  let fullscreenAttempts = 0;
+  const maxAttempts = 3;
+  let fullscreenCheckInterval;
+  
+  function maintainFullscreen() {
+    const videoContainer = document.querySelector(".video-container");
+    const overlayVisible = overlay.classList.contains("show");
+    
+    if (overlayVisible && !document.fullscreenElement && fullscreenAttempts < maxAttempts) {
+      fullscreenAttempts++;
+      setTimeout(() => {
+        if (videoContainer && overlayVisible) {
+          if (videoContainer.requestFullscreen) {
+            videoContainer.requestFullscreen().catch(() => {});
+          } else if (videoContainer.webkitRequestFullscreen) {
+            videoContainer.webkitRequestFullscreen();
+          } else if (videoContainer.msRequestFullscreen) {
+            videoContainer.msRequestFullscreen();
+          }
+        }
+      }, 300);
+    }
+  }
+
+  // Watch for fullscreen exits caused by ads
+  document.addEventListener('fullscreenchange', function() {
+    if (!document.fullscreenElement && overlay.classList.contains("show")) {
+      maintainFullscreen();
+    } else {
+      fullscreenAttempts = 0;
+    }
+  });
+
+  document.addEventListener('webkitfullscreenchange', function() {
+    if (!document.webkitFullscreenElement && overlay.classList.contains("show")) {
+      maintainFullscreen();
+    } else {
+      fullscreenAttempts = 0;
+    }
+  });
+
+  // Reset attempt counter when overlay is shown
+  const originalShow = overlay.classList.add;
+  overlay.classList.add = function(...args) {
+    if (args.includes('show')) {
+      fullscreenAttempts = 0;
+    }
+    return originalShow.apply(this, args);
+  };
 })();
 
 const initSliders=()=>{
