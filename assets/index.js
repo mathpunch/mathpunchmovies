@@ -334,6 +334,69 @@ function updateRecommendations(){
 loadFavorites()
 updateRecommendations()
 
+// Block redirect attempts and pop-ups
+(function() {
+  // Prevent window.open pop-ups
+  const originalOpen = window.open;
+  window.open = function() {
+    console.log("Blocked pop-up attempt");
+    return null;
+  };
+
+  // Block redirects via window.location
+  let allowNavigation = true;
+  const originalLocationSetter = Object.getOwnPropertyDescriptor(window, 'location').set;
+  
+  Object.defineProperty(window, 'location', {
+    set: function(value) {
+      if (allowNavigation) {
+        originalLocationSetter.call(window, value);
+      } else {
+        console.log("Blocked redirect attempt to:", value);
+      }
+    },
+    get: function() {
+      return window.location;
+    }
+  });
+
+  // Block beforeunload redirects
+  window.addEventListener('beforeunload', function(e) {
+    if (!allowNavigation) {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
+  }, true);
+
+  // Detect and block suspicious clicks that might trigger redirects
+  document.addEventListener('click', function(e) {
+    const target = e.target;
+    
+    // Allow navigation for legitimate internal links
+    if (target.tagName === 'A' && target.href && target.href.startsWith(window.location.origin)) {
+      allowNavigation = true;
+      return;
+    }
+    
+    // Block external navigation attempts
+    allowNavigation = false;
+    setTimeout(() => { allowNavigation = true; }, 100);
+  }, true);
+
+  // Block new window/tab attempts
+  window.addEventListener('auxclick', function(e) {
+    if (e.button === 1) { // Middle mouse button
+      const target = e.target.closest('a');
+      if (!target || !target.href || !target.href.startsWith(window.location.origin)) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("Blocked middle-click redirect");
+      }
+    }
+  }, true);
+})();
+
 const initSliders=()=>{
   document.querySelectorAll('.slider-container').forEach(container=>{
     const track=container.querySelector('.slider-track')
