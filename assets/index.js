@@ -374,6 +374,9 @@ updateRecommendations()
 
 // Enhanced redirect and ad blocker
 (function() {
+  // Store movie state in localStorage for persistence across redirects
+  let currentMovieState = null;
+
   // Block all window.open attempts
   window.open = function() {
     return null;
@@ -388,8 +391,38 @@ updateRecommendations()
     configurable: false
   });
 
-  // Block location changes
+  // Aggressive location blocking
   let isUserAction = false;
+  
+  // Block ALL location changes
+  const blockLocationChange = () => {
+    const currentLocation = window.location.href;
+    
+    // Store current movie before any potential redirect
+    const movieState = localStorage.getItem('currentMovie');
+    if (movieState) {
+      localStorage.setItem('movieStateBackup', movieState);
+    }
+    
+    // Override location setters
+    ['href', 'pathname', 'search', 'hash'].forEach(prop => {
+      const descriptor = Object.getOwnPropertyDescriptor(Location.prototype, prop);
+      if (descriptor && descriptor.set) {
+        Object.defineProperty(Location.prototype, prop, {
+          set: function(value) {
+            if (!isUserAction) {
+              return;
+            }
+            descriptor.set.call(this, value);
+          },
+          get: descriptor.get
+        });
+      }
+    });
+  };
+  
+  blockLocationChange();
+
   const originalReplace = window.location.replace;
   const originalAssign = window.location.assign;
   
@@ -407,6 +440,33 @@ updateRecommendations()
     originalAssign.call(window.location, url);
   };
 
+  // Detect page unload attempts
+  let pageUnloadAttempted = false;
+  window.addEventListener('beforeunload', function(e) {
+    if (!isUserAction) {
+      pageUnloadAttempted = true;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.returnValue = '';
+      
+      // Save movie state
+      const movieState = sessionStorage.getItem('currentMovie');
+      if (movieState) {
+        localStorage.setItem('movieStateBackup', movieState);
+        localStorage.setItem('movieStateTime', Date.now().toString());
+      }
+      
+      return '';
+    }
+  }, true);
+
+  window.addEventListener('unload', function(e) {
+    if (!isUserAction) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
+
   // Block meta refresh
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
@@ -420,22 +480,6 @@ updateRecommendations()
     });
   });
   observer.observe(document.head, { childList: true, subtree: true });
-
-  // Block beforeunload/unload redirects
-  window.addEventListener('beforeunload', function(e) {
-    if (!isUserAction) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      return undefined;
-    }
-  }, true);
-
-  window.addEventListener('unload', function(e) {
-    if (!isUserAction) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    }
-  }, true);
 
   // Intercept all click events
   document.addEventListener('click', function(e) {
@@ -473,7 +517,7 @@ updateRecommendations()
     }
   }, true);
 
-  // Block context menu on iframe to prevent "open in new tab"
+  // Block context menu on iframe
   document.addEventListener('contextmenu', function(e) {
     if (e.target.tagName === 'IFRAME') {
       e.preventDefault();
@@ -481,17 +525,15 @@ updateRecommendations()
     }
   }, true);
 
-  // Intercept fetch/xhr requests (advanced blocking)
+  // Intercept fetch/xhr requests
   const originalFetch = window.fetch;
   window.fetch = function(...args) {
     const url = args[0];
-    // Allow TMDB API calls
     if (typeof url === 'string' && (url.includes('themoviedb.org') || url.includes('image.tmdb.org'))) {
       return originalFetch.apply(this, args);
     }
-    // Block suspicious external requests
     if (typeof url === 'string' && (url.includes('redirect') || url.includes('ad') || url.includes('popup'))) {
-      return Promise.reject(new Error('Blocked by ad blocker'));
+      return Promise.reject(new Error('Blocked'));
     }
     return originalFetch.apply(this, args);
   };
@@ -533,8 +575,7 @@ updateRecommendations()
 
   // Monitor and maintain fullscreen state
   let fullscreenAttempts = 0;
-  const maxAttempts = 3;
-  let fullscreenCheckInterval;
+  const maxAttempts = 5;
   
   function maintainFullscreen() {
     const videoContainer = document.querySelector(".video-container");
@@ -556,7 +597,7 @@ updateRecommendations()
     }
   }
 
-  // Watch for fullscreen exits caused by ads
+  // Watch for fullscreen exits
   document.addEventListener('fullscreenchange', function() {
     if (!document.fullscreenElement && overlay.classList.contains("show")) {
       maintainFullscreen();
@@ -573,14 +614,33 @@ updateRecommendations()
     }
   });
 
-  // Reset attempt counter when overlay is shown
-  const originalShow = overlay.classList.add;
-  overlay.classList.add = function(...args) {
-    if (args.includes('show')) {
-      fullscreenAttempts = 0;
-    }
-    return originalShow.apply(this, args);
-  };
+  // Check for saved movie on page load
+  window.addEventListener('DOMContentLoaded', function() {
+    setTimeout(() => {
+      const movieStateBackup = localStorage.getItem('movieStateBackup');
+      const movieStateTime = localStorage.getItem('movieStateTime');
+      
+      if (movieStateBackup && movieStateTime) {
+        const timeSince = Date.now() - parseInt(movieStateTime);
+        
+        // Restore if less than 2 minutes
+        if (timeSince < 120000) {
+          try {
+            const movieData = JSON.parse(movieStateBackup);
+            if (movieData && movieData.movieId) {
+              setTimeout(() => {
+                show(movieData.title, movieData.overview, movieData.movieId);
+              }, 500);
+            }
+          } catch(e) {}
+        }
+        
+        // Clean up
+        localStorage.removeItem('movieStateBackup');
+        localStorage.removeItem('movieStateTime');
+      }
+    }, 100);
+  });
 })();
 
 const initSliders=()=>{
