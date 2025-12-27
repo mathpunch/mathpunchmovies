@@ -180,7 +180,6 @@ overlay.addEventListener("click", e => {
     }
     overlay.classList.remove("show");
     document.getElementById("player").src = "";
-    sessionStorage.removeItem('currentMovie');
   }
 });
 
@@ -197,7 +196,6 @@ closeBtn.addEventListener("click",()=>{
   }
   overlay.classList.remove("show")
   document.getElementById("player").src=""
-  sessionStorage.removeItem('currentMovie');
 })
 
 // Listen for fullscreen exit (ESC key) and close overlay
@@ -205,7 +203,6 @@ document.addEventListener("fullscreenchange", () => {
   if (!document.fullscreenElement && overlay.classList.contains("show")) {
     overlay.classList.remove("show");
     document.getElementById("player").src = "";
-    sessionStorage.removeItem('currentMovie');
   }
 });
 
@@ -213,41 +210,6 @@ document.addEventListener("webkitfullscreenchange", () => {
   if (!document.webkitFullscreenElement && overlay.classList.contains("show")) {
     overlay.classList.remove("show");
     document.getElementById("player").src = "";
-    sessionStorage.removeItem('currentMovie');
-  }
-});
-
-// Restore movie when returning to tab
-document.addEventListener('visibilitychange', function() {
-  if (!document.hidden) {
-    const savedMovie = sessionStorage.getItem('currentMovie');
-    if (savedMovie) {
-      try {
-        const movieData = JSON.parse(savedMovie);
-        const timeSinceSaved = Date.now() - movieData.timestamp;
-        
-        // Only restore if less than 5 minutes have passed
-        if (timeSinceSaved < 300000 && !overlay.classList.contains("show")) {
-          show(movieData.title, movieData.overview, movieData.movieId);
-        }
-      } catch(e) {}
-    }
-  }
-});
-
-// Also check on page focus
-window.addEventListener('focus', function() {
-  const savedMovie = sessionStorage.getItem('currentMovie');
-  if (savedMovie) {
-    try {
-      const movieData = JSON.parse(savedMovie);
-      const timeSinceSaved = Date.now() - movieData.timestamp;
-      
-      // Only restore if less than 5 minutes have passed
-      if (timeSinceSaved < 300000 && !overlay.classList.contains("show")) {
-        show(movieData.title, movieData.overview, movieData.movieId);
-      }
-    } catch(e) {}
   }
 });
 
@@ -371,277 +333,6 @@ function updateRecommendations(){
 
 loadFavorites()
 updateRecommendations()
-
-// Enhanced redirect and ad blocker
-(function() {
-  // Store movie state in localStorage for persistence across redirects
-  let currentMovieState = null;
-
-  // Block all window.open attempts
-  window.open = function() {
-    return null;
-  };
-
-  // Override window.open for iframes too
-  Object.defineProperty(window, 'open', {
-    value: function() {
-      return null;
-    },
-    writable: false,
-    configurable: false
-  });
-
-  // Aggressive location blocking
-  let isUserAction = false;
-  
-  // Block ALL location changes
-  const blockLocationChange = () => {
-    const currentLocation = window.location.href;
-    
-    // Store current movie before any potential redirect
-    const movieState = localStorage.getItem('currentMovie');
-    if (movieState) {
-      localStorage.setItem('movieStateBackup', movieState);
-    }
-    
-    // Override location setters
-    ['href', 'pathname', 'search', 'hash'].forEach(prop => {
-      const descriptor = Object.getOwnPropertyDescriptor(Location.prototype, prop);
-      if (descriptor && descriptor.set) {
-        Object.defineProperty(Location.prototype, prop, {
-          set: function(value) {
-            if (!isUserAction) {
-              return;
-            }
-            descriptor.set.call(this, value);
-          },
-          get: descriptor.get
-        });
-      }
-    });
-  };
-  
-  blockLocationChange();
-
-  const originalReplace = window.location.replace;
-  const originalAssign = window.location.assign;
-  
-  window.location.replace = function(url) {
-    if (!isUserAction) {
-      return;
-    }
-    originalReplace.call(window.location, url);
-  };
-  
-  window.location.assign = function(url) {
-    if (!isUserAction) {
-      return;
-    }
-    originalAssign.call(window.location, url);
-  };
-
-  // Detect page unload attempts
-  let pageUnloadAttempted = false;
-  window.addEventListener('beforeunload', function(e) {
-    if (!isUserAction) {
-      pageUnloadAttempted = true;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      e.returnValue = '';
-      
-      // Save movie state
-      const movieState = sessionStorage.getItem('currentMovie');
-      if (movieState) {
-        localStorage.setItem('movieStateBackup', movieState);
-        localStorage.setItem('movieStateTime', Date.now().toString());
-      }
-      
-      return '';
-    }
-  }, true);
-
-  window.addEventListener('unload', function(e) {
-    if (!isUserAction) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    }
-  }, true);
-
-  // Block meta refresh
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.type === 'childList') {
-        mutation.addedNodes.forEach((node) => {
-          if (node.tagName === 'META' && node.httpEquiv === 'refresh') {
-            node.remove();
-          }
-        });
-      }
-    });
-  });
-  observer.observe(document.head, { childList: true, subtree: true });
-
-  // Intercept all click events
-  document.addEventListener('click', function(e) {
-    const target = e.target;
-    const link = target.closest('a');
-    
-    // Allow clicks on our own content
-    if (link && link.href && link.href.startsWith(window.location.origin)) {
-      isUserAction = true;
-      setTimeout(() => { isUserAction = false; }, 1000);
-      return;
-    }
-    
-    // Allow clicks on our buttons/elements
-    if (target.closest('.close-btn, .load-more, .slider-btn, .movie, #search')) {
-      isUserAction = true;
-      setTimeout(() => { isUserAction = false; }, 100);
-      return;
-    }
-    
-    // Block everything else
-    isUserAction = false;
-  }, true);
-
-  // Block middle mouse button clicks
-  document.addEventListener('auxclick', function(e) {
-    if (e.button === 1) {
-      const target = e.target.closest('a');
-      if (!target || !target.href || !target.href.startsWith(window.location.origin)) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        return false;
-      }
-    }
-  }, true);
-
-  // Block context menu on iframe
-  document.addEventListener('contextmenu', function(e) {
-    if (e.target.tagName === 'IFRAME') {
-      e.preventDefault();
-      return false;
-    }
-  }, true);
-
-  // Intercept fetch/xhr requests
-  const originalFetch = window.fetch;
-  window.fetch = function(...args) {
-    const url = args[0];
-    if (typeof url === 'string' && (url.includes('themoviedb.org') || url.includes('image.tmdb.org'))) {
-      return originalFetch.apply(this, args);
-    }
-    if (typeof url === 'string' && (url.includes('redirect') || url.includes('ad') || url.includes('popup'))) {
-      return Promise.reject(new Error('Blocked'));
-    }
-    return originalFetch.apply(this, args);
-  };
-
-  // Block timer-based redirects
-  const originalSetTimeout = window.setTimeout;
-  const originalSetInterval = window.setInterval;
-  
-  window.setTimeout = function(callback, delay, ...args) {
-    if (typeof callback === 'string' && (callback.includes('location') || callback.includes('window.open'))) {
-      return 0;
-    }
-    return originalSetTimeout.call(window, callback, delay, ...args);
-  };
-  
-  window.setInterval = function(callback, delay, ...args) {
-    if (typeof callback === 'string' && (callback.includes('location') || callback.includes('window.open'))) {
-      return 0;
-    }
-    return originalSetInterval.call(window, callback, delay, ...args);
-  };
-
-  // Block focus stealing
-  let lastFocusTime = Date.now();
-  window.addEventListener('focus', function(e) {
-    const timeSinceLast = Date.now() - lastFocusTime;
-    if (timeSinceLast < 100 && e.target !== window) {
-      e.stopImmediatePropagation();
-    }
-    lastFocusTime = Date.now();
-  }, true);
-
-  // Block visibility change tricks
-  document.addEventListener('visibilitychange', function(e) {
-    if (!isUserAction && document.hidden) {
-      e.stopImmediatePropagation();
-    }
-  }, true);
-
-  // Monitor and maintain fullscreen state
-  let fullscreenAttempts = 0;
-  const maxAttempts = 5;
-  
-  function maintainFullscreen() {
-    const videoContainer = document.querySelector(".video-container");
-    const overlayVisible = overlay.classList.contains("show");
-    
-    if (overlayVisible && !document.fullscreenElement && fullscreenAttempts < maxAttempts) {
-      fullscreenAttempts++;
-      setTimeout(() => {
-        if (videoContainer && overlayVisible) {
-          if (videoContainer.requestFullscreen) {
-            videoContainer.requestFullscreen().catch(() => {});
-          } else if (videoContainer.webkitRequestFullscreen) {
-            videoContainer.webkitRequestFullscreen();
-          } else if (videoContainer.msRequestFullscreen) {
-            videoContainer.msRequestFullscreen();
-          }
-        }
-      }, 300);
-    }
-  }
-
-  // Watch for fullscreen exits
-  document.addEventListener('fullscreenchange', function() {
-    if (!document.fullscreenElement && overlay.classList.contains("show")) {
-      maintainFullscreen();
-    } else {
-      fullscreenAttempts = 0;
-    }
-  });
-
-  document.addEventListener('webkitfullscreenchange', function() {
-    if (!document.webkitFullscreenElement && overlay.classList.contains("show")) {
-      maintainFullscreen();
-    } else {
-      fullscreenAttempts = 0;
-    }
-  });
-
-  // Check for saved movie on page load
-  window.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => {
-      const movieStateBackup = localStorage.getItem('movieStateBackup');
-      const movieStateTime = localStorage.getItem('movieStateTime');
-      
-      if (movieStateBackup && movieStateTime) {
-        const timeSince = Date.now() - parseInt(movieStateTime);
-        
-        // Restore if less than 2 minutes
-        if (timeSince < 120000) {
-          try {
-            const movieData = JSON.parse(movieStateBackup);
-            if (movieData && movieData.movieId) {
-              setTimeout(() => {
-                show(movieData.title, movieData.overview, movieData.movieId);
-              }, 500);
-            }
-          } catch(e) {}
-        }
-        
-        // Clean up
-        localStorage.removeItem('movieStateBackup');
-        localStorage.removeItem('movieStateTime');
-      }
-    }, 100);
-  });
-})();
 
 const initSliders=()=>{
   document.querySelectorAll('.slider-container').forEach(container=>{
